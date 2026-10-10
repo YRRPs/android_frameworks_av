@@ -221,6 +221,7 @@ status_t CameraDeviceClient::initializeImpl(TProviderPtr providerPtr,
         return res;
     }
     mDevice->setPrivilegedClient(mPrivilegedClient);
+    mDevice->setClientPackageName(getPackageName());
     return OK;
 }
 

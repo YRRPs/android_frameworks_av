@@ -53,6 +53,7 @@
 #include <cutils/properties.h>
 #include <camera/CameraUtils.h>
 #include <camera/StringUtils.h>
+#include <camera/VendorTagDescriptor.h>
 
 #include <android-base/properties.h>
 #include <android/hardware/camera/device/3.7/ICameraInjectionSession.h>
@@ -87,6 +88,64 @@ using namespace android::hardware::cameraservice::utils::conversion::aidl;
 
 namespace flags = com::android::internal::camera::flags;
 namespace wm_flags = com::android::window::flags;
+
+#ifdef CAMERA_PACKAGE_NAME
+namespace {
+
+// Some OEM camera HALs (OPlus camx) unlock vendor operating modes, such as
+// portrait, only when the session parameters name the client package in a
+// vendor tag. Returns a copy of sessionParams carrying that tag; on failure
+// it logs a warning and returns the parameters unchanged.
+android::CameraMetadata withClientPackageTag(const android::CameraMetadata& sessionParams,
+        const std::string& cameraId, metadata_vendor_id_t vendorTagId,
+        const std::string& packageName) {
+    using android::VendorTagDescriptor;
+    using android::VendorTagDescriptorCache;
+
+    android::CameraMetadata tagged(sessionParams);
+    if (packageName.empty()) {
+        return tagged;
+    }
+
+    android::sp<VendorTagDescriptor> vTags;
+    android::sp<VendorTagDescriptorCache> cache =
+            VendorTagDescriptorCache::getGlobalVendorTagCache();
+    if (cache != nullptr) {
+        cache->getVendorTagDescriptor(vendorTagId, &vTags);
+    } else {
+        vTags = VendorTagDescriptor::getGlobalVendorTagDescriptor();
+    }
+
+    uint32_t tag;
+    if (vTags == nullptr ||
+            android::CameraMetadata::getTagFromName(CAMERA_PACKAGE_NAME, vTags.get(), &tag)
+                    != android::OK) {
+        ALOGW("%s: Camera %s: vendor tag %s not found, session not tagged", __FUNCTION__,
+                cameraId.c_str(), CAMERA_PACKAGE_NAME);
+        return tagged;
+    }
+
+    // Vendor tag types resolve through the buffer's vendor id.
+    camera_metadata_t* buffer = tagged.release();
+    if (buffer == nullptr) {
+        buffer = allocate_camera_metadata(/*entry_capacity*/ 1, /*data_capacity*/ 0);
+    }
+    if (get_camera_metadata_vendor_id(buffer) == CAMERA_METADATA_INVALID_VENDOR_ID) {
+        set_camera_metadata_vendor_id(buffer, vendorTagId);
+    }
+    tagged.acquire(buffer);
+
+    android::status_t res = tagged.update(tag, android::String8(packageName.c_str()));
+    if (res != android::OK) {
+        ALOGW("%s: Camera %s: failed to set %s: %s (%d)", __FUNCTION__, cameraId.c_str(),
+                CAMERA_PACKAGE_NAME, strerror(-res), res);
+        return android::CameraMetadata(sessionParams);
+    }
+    return tagged;
+}
+
+}  // namespace
+#endif  // CAMERA_PACKAGE_NAME
 
 namespace android {
 
@@ -2474,9 +2533,15 @@ bool Camera3Device::reconfigureCamera(const CameraMetadata& sessionParams, int c
 
 
 status_t Camera3Device::configureStreamsLocked(int operatingMode,
-        const CameraMetadata& sessionParams, bool notifyRequestThread) {
+        const CameraMetadata& requestedSessionParams, bool notifyRequestThread) {
     ATRACE_CALL();
     status_t res;
+#ifdef CAMERA_PACKAGE_NAME
+    const CameraMetadata sessionParams = withClientPackageTag(requestedSessionParams, mId,
+            mVendorTagId, mClientPackageName);
+#else
+    const CameraMetadata& sessionParams = requestedSessionParams;
+#endif
     // Stream/surface setup can include a lot of binder IPC. Raise the
     // thread priority when running the binder IPC heavy configuration
     // sequence.

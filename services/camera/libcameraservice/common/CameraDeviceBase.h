@@ -606,9 +606,17 @@ class CameraDeviceBase : public virtual FrameProducer {
      */
     void setPrivilegedClient(bool privilegedClient) { mPrivilegedClient = privilegedClient; }
 
+    /**
+     * Set the package name of the client that opened this device
+     */
+    void setClientPackageName(const std::string& packageName) {
+        mClientPackageName = packageName;
+    }
+
 protected:
     bool mImageDumpMask = 0;
     bool mPrivilegedClient = false;
+    std::string mClientPackageName;
     std::vector<int64_t> mStreamUseCaseOverrides;
 };
 

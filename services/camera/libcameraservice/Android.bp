@@ -245,6 +245,9 @@ cc_library {
         // Vendor tag that receives the client package name at configureStreams.
         any @ flag_val: ["-DCAMERA_PACKAGE_NAME=\"" + flag_val + "\""],
         default: [],
+    }) + select(soong_config_variable("oplus_camera", "enabled"), {
+        true: ["-DOPLUS_CAMERA"],
+        default: [],
     }),
 }
 

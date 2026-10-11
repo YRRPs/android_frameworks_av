@@ -24,6 +24,7 @@ cc_defaults {
     // All test sources that can run on both host and device
     // should be listed here
     srcs: [
+        "Camera3StreamTimestampCheckTest.cpp",
         "ClientManagerTest.cpp",
         "DepthProcessorTest.cpp",
         "DistortionMapperTest.cpp",
@@ -67,7 +68,10 @@ cc_defaults {
         "-Wall",
         "-Wextra",
         "-Werror",
-    ],
+    ] + select(soong_config_variable("oplus_camera", "enabled"), {
+        true: ["-DOPLUS_CAMERA"],
+        default: [],
+    }),
 
     test_suites: ["device-tests"],
 
